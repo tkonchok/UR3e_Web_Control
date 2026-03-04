@@ -31,6 +31,9 @@ const ENABLE_DASHBOARD_STATUS = process.env.ENABLE_DASHBOARD_STATUS !== "0";
 const APPROACH_D = 0.08;
 const TOUCH_D = 0.02;
 const LIFT_D = 0.10;
+const MARK_TOUCH_D = 0.0;
+const TTT_MARK_SIZE_FRAC = 0.34;
+const TTT_MARK_LINE_V = 0.015;
 
 const GRIP_DO = 0;
 const GRIP_CLOSE = true;
@@ -84,6 +87,10 @@ function poseToJointMove(pose, a = 1.0, v = 0.6) {
   return `movej(get_inverse_kin(p[${pose.x},${pose.y},${pose.z},${pose.rx},${pose.ry},${pose.rz}], get_actual_joint_positions()), a=${a}, v=${v})`;
 }
 
+function poseToLinearMove(pose, a = 0.8, v = 0.04) {
+  return `movel(p[${pose.x},${pose.y},${pose.z},${pose.rx},${pose.ry},${pose.rz}], a=${a}, v=${v})`;
+}
+
 function offsetAlongNormal(pose, s, normal) {
   return {
     ...pose,
@@ -93,10 +100,25 @@ function offsetAlongNormal(pose, s, normal) {
   };
 }
 
+function offsetInBoardPlane(pose, fileScale = 0, rankScale = 0) {
+  const f = CHESS_BOARD.fileVec || { x: 0, y: 0, z: 0 };
+  const r = CHESS_BOARD.rankVec || { x: 0, y: 0, z: 0 };
+  return {
+    ...pose,
+    x: pose.x + fileScale * f.x + rankScale * r.x,
+    y: pose.y + fileScale * f.y + rankScale * r.y,
+    z: pose.z + fileScale * f.z + rankScale * r.z,
+  };
+}
+
+function normalizeMarkSymbol(value) {
+  const s = String(value || "X").trim().toUpperCase();
+  return s === "O" ? "O" : "X";
+}
+
 function getBoardNormal() {
-  const FLIP_NORMAL = false;
   const n = CHESS_BOARD.normal || { x: 0, y: 0, z: 1 };
-  return FLIP_NORMAL ? { x: -n.x, y: -n.y, z: -n.z } : n;
+  return n;
 }
 
 function getPoseForSquare(id) {
@@ -128,12 +150,13 @@ function inferRobotStateFromDashboard(dashboard, fallbackMoving) {
     return out;
   }
 
-  if (running !== null) {
-    out.moving = running;
-  } else if (programState.includes("playing") || programState.includes("running")) {
+  // Prefer explicit program state when available; fall back to `running`.
+  if (programState.includes("playing") || programState.includes("running")) {
     out.moving = true;
   } else if (programState.includes("stopped") || programState.includes("paused")) {
     out.moving = false;
+  } else if (running !== null) {
+    out.moving = running;
   }
 
   // If dashboard is reachable but robot reports disconnected/no controller, reflect that.
@@ -198,24 +221,76 @@ function scriptForTttMove(id) {
   };
 }
 
-function scriptForTttMark(id) {
+function scriptForTttMark(id, symbol = "X") {
   const pose = ticTacToeSquareToPose(id);
   if (!pose) return null;
 
+  const mark = normalizeMarkSymbol(symbol);
   const n = getBoardNormal();
-  const hover = offsetAlongNormal(pose, APPROACH_D, n);
-  const touch = offsetAlongNormal(pose, TOUCH_D, n);
-  const lift = offsetAlongNormal(pose, LIFT_D, n);
+  const centerHover = offsetAlongNormal(pose, APPROACH_D, n);
+  const d = TTT_MARK_SIZE_FRAC;
 
-  const script = [
-    poseToJointMove(hover, 1.0, 0.6),
-    poseToJointMove(touch, 0.8, 0.4),
-    sleepSec(GRIP_DELAY_SEC),
-    poseToJointMove(lift, 1.0, 0.6),
-    SQUARES.HOME_Q ? movejQ(SQUARES.HOME_Q, 1.0, 0.6) : "",
-  ].filter(Boolean).join("\n");
+  const scriptLines = [poseToJointMove(centerHover, 1.0, 0.6)];
+  const strokes = [];
 
-  return { script, pose, hover, touch, lift, normal: n };
+  if (mark === "X") {
+    const p1 = offsetInBoardPlane(pose, -d, -d);
+    const p2 = offsetInBoardPlane(pose, d, d);
+    const p3 = offsetInBoardPlane(pose, -d, d);
+    const p4 = offsetInBoardPlane(pose, d, -d);
+    const p1h = offsetAlongNormal(p1, APPROACH_D, n);
+    const p2h = offsetAlongNormal(p2, APPROACH_D, n);
+    const p3h = offsetAlongNormal(p3, APPROACH_D, n);
+    const p4h = offsetAlongNormal(p4, APPROACH_D, n);
+    const p1t = offsetAlongNormal(p1, MARK_TOUCH_D, n);
+    const p2t = offsetAlongNormal(p2, MARK_TOUCH_D, n);
+    const p3t = offsetAlongNormal(p3, MARK_TOUCH_D, n);
+    const p4t = offsetAlongNormal(p4, MARK_TOUCH_D, n);
+
+    scriptLines.push(
+      poseToJointMove(p1h, 1.0, 0.5),
+      poseToJointMove(p1t, 0.8, 0.25),
+      poseToLinearMove(p2t, 0.6, TTT_MARK_LINE_V),
+      poseToJointMove(p2h, 1.0, 0.5),
+      poseToJointMove(p3h, 1.0, 0.5),
+      poseToJointMove(p3t, 0.8, 0.25),
+      poseToLinearMove(p4t, 0.6, TTT_MARK_LINE_V),
+      poseToJointMove(p4h, 1.0, 0.5),
+    );
+    strokes.push(["diag1", p1, p2], ["diag2", p3, p4]);
+  } else {
+    const points = [];
+    const segments = 16;
+    for (let i = 0; i <= segments; i += 1) {
+      const t = (2 * Math.PI * i) / segments;
+      const c = Math.cos(t);
+      const s = Math.sin(t);
+      points.push(offsetInBoardPlane(pose, d * c, d * s));
+    }
+    const hoverPoints = points.map((p) => offsetAlongNormal(p, APPROACH_D, n));
+    const touchPoints = points.map((p) => offsetAlongNormal(p, MARK_TOUCH_D, n));
+
+    scriptLines.push(
+      poseToJointMove(hoverPoints[0], 1.0, 0.5),
+      poseToJointMove(touchPoints[0], 0.8, 0.25),
+    );
+    for (let i = 1; i < touchPoints.length; i += 1) {
+      scriptLines.push(poseToLinearMove(touchPoints[i], 0.6, TTT_MARK_LINE_V));
+    }
+    scriptLines.push(poseToJointMove(hoverPoints[hoverPoints.length - 1], 1.0, 0.5));
+    strokes.push(["circle", points]);
+  }
+
+  scriptLines.push(poseToJointMove(centerHover, 1.0, 0.6));
+  const script = scriptLines.filter(Boolean).join("\n");
+  return {
+    script,
+    pose,
+    hover: centerHover,
+    normal: n,
+    symbol: mark,
+    strokes,
+  };
 }
 
 function scriptForPickPlace(fromId, toId) {
@@ -474,16 +549,17 @@ router.post("/ttt/mark/:id", async (req, res) => {
   try {
     if (!requireControlLock(req, res)) return;
     const id = req.params.id;
-    const plan = scriptForTttMark(id);
+    const symbol = normalizeMarkSymbol(req.body?.symbol);
+    const plan = scriptForTttMark(id, symbol);
     if (!plan) return res.status(404).json({ ok: false, error: `Unknown square ${id}` });
 
     const dryRun = isDryRun(req);
     if (!dryRun) {
-      markMoving({ action: "tttMark", target: String(id), script: plan.script }, 2500);
+      markMoving({ action: "tttMark", target: `${String(id)}:${plan.symbol}`, script: plan.script }, 5000);
       await sendURScript(UR_HOST, UR_PORT, plan.script);
     }
 
-    res.json({ ok: true, action: "tttMark", dryRun, target: String(id), ...plan });
+    res.json({ ok: true, action: "tttMark", dryRun, target: String(id), symbol: plan.symbol, ...plan });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
