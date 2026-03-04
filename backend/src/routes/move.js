@@ -1,6 +1,7 @@
 const express = require("express");
 const { sendURScript } = require("../robot/urTcp");
 const { getRobotStatus } = require("../robot/urDashboard");
+const { getRtdeStatus } = require("../robot/urRtde");
 const {
   SQUARES,
   CHESS_BOARD,
@@ -26,6 +27,8 @@ const UR_PORT = Number(process.env.UR_PORT || 30002);
 const DASHBOARD_HOST = process.env.UR_DASHBOARD_HOST || UR_HOST;
 const DASHBOARD_PORT = Number(process.env.UR_DASHBOARD_PORT || 29999);
 const ENABLE_DASHBOARD_STATUS = process.env.ENABLE_DASHBOARD_STATUS !== "0";
+const ENABLE_RTDE_STATUS = process.env.ENABLE_RTDE_STATUS !== "0";
+const ENABLE_DASHBOARD_WHEN_RTDE_LIVE = process.env.ENABLE_DASHBOARD_WHEN_RTDE_LIVE === "1";
 
 //Motion distances(meters)
 const APPROACH_D = 0.08;
@@ -150,13 +153,19 @@ function inferRobotStateFromDashboard(dashboard, fallbackMoving) {
     return out;
   }
 
-  // Prefer explicit program state when available; fall back to `running`.
-  if (programState.includes("playing") || programState.includes("running")) {
+  const programRunning = programState.includes("playing") || programState.includes("running");
+  const programStopped = programState.includes("stopped") || programState.includes("paused");
+
+  // Dashboard data can be inconsistent for External Control.
+  // Treat any positive signal as moving; require strong agreement to mark stopped.
+  if (running === true || programRunning) {
     out.moving = true;
-  } else if (programState.includes("stopped") || programState.includes("paused")) {
+  } else if (running === false && programStopped) {
     out.moving = false;
-  } else if (running !== null) {
-    out.moving = running;
+  } else if (running === false && !programRunning && !programStopped) {
+    out.moving = false;
+  } else if (running == null && programStopped) {
+    out.moving = false;
   }
 
   // If dashboard is reachable but robot reports disconnected/no controller, reflect that.
@@ -333,8 +342,13 @@ router.get("/status", async (req, res) => {
   const token = getToken(req);
   if (token) refreshLock(token);
 
+  const rtde = ENABLE_RTDE_STATUS ? getRtdeStatus() : null;
+  const rtdeLive = !!(rtde && rtde.connected && !rtde.stale);
+
   let dashboard = null;
-  if (ENABLE_DASHBOARD_STATUS) {
+  const shouldQueryDashboard =
+    ENABLE_DASHBOARD_STATUS && (!rtdeLive || ENABLE_DASHBOARD_WHEN_RTDE_LIVE);
+  if (shouldQueryDashboard) {
     try {
       dashboard = await getRobotStatus(DASHBOARD_HOST, DASHBOARD_PORT);
     } catch {
@@ -342,7 +356,18 @@ router.get("/status", async (req, res) => {
     }
   }
 
-  const live = inferRobotStateFromDashboard(dashboard, st.moving);
+  let live = inferRobotStateFromDashboard(dashboard, st.moving);
+
+  // Prefer RTDE for motion state when live samples are available.
+  if (rtdeLive) {
+    live.moving = !!rtde.moving;
+    live.robotState = live.moving ? "Moving" : "Idle";
+    live.connection = "Connected";
+  } else if (!dashboard && (!rtde || !rtde.connected || rtde.stale) && (ENABLE_DASHBOARD_STATUS || ENABLE_RTDE_STATUS)) {
+    // No live source responded this tick (dashboard + RTDE unavailable).
+    live.connection = "Disconnected";
+  }
+
   res.json({
     ok: true,
     connection: live.connection,
@@ -354,6 +379,7 @@ router.get("/status", async (req, res) => {
     boardProfile: getBoardProfileName(),
     lock: getLockStatus(token),
     dashboard: dashboard || undefined,
+    rtde: rtde || undefined,
   });
 });
 
