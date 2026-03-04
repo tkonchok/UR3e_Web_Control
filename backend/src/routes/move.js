@@ -1,6 +1,15 @@
 const express = require("express");
 const { sendURScript } = require("../robot/urTcp");
-const { SQUARES, CHESS_BOARD, chessSquareToPose, ticTacToeSquareToPose } = require("../robot/squares");
+const { getRobotStatus } = require("../robot/urDashboard");
+const {
+  SQUARES,
+  CHESS_BOARD,
+  chessSquareToPose,
+  ticTacToeSquareToPose,
+  getBoardProfiles,
+  getBoardProfileName,
+  setBoardProfile,
+} = require("../robot/squares");
 const {
   markMoving,
   getState,
@@ -9,12 +18,14 @@ const {
   releaseLock,
   getLockStatus,
 } = require("../robot/state");
-const { getRobotStatus } = require("../robot/urDashboard");
 
 const router = express.Router();
 
-const UR_HOST = "localhost";
-const UR_PORT = 30002;
+const UR_HOST = process.env.UR_HOST || "localhost";
+const UR_PORT = Number(process.env.UR_PORT || 30002);
+const DASHBOARD_HOST = process.env.UR_DASHBOARD_HOST || UR_HOST;
+const DASHBOARD_PORT = Number(process.env.UR_DASHBOARD_PORT || 29999);
+const ENABLE_DASHBOARD_STATUS = process.env.ENABLE_DASHBOARD_STATUS !== "0";
 
 //Motion distances(meters)
 const APPROACH_D = 0.08;
@@ -92,14 +103,58 @@ function getPoseForSquare(id) {
   return chessSquareToPose(id);
 }
 
+function parseDashboardRunning(value) {
+  if (value == null) return null;
+  const s = String(value).toLowerCase();
+  if (s.includes("true")) return true;
+  if (s.includes("false")) return false;
+  return null;
+}
+
+function inferRobotStateFromDashboard(dashboard, fallbackMoving) {
+  const out = {
+    moving: fallbackMoving,
+    robotState: fallbackMoving ? "Moving" : "Idle",
+    connection: "Connected",
+  };
+  if (!dashboard) return out;
+
+  const running = parseDashboardRunning(dashboard.running);
+  const programState = String(dashboard.programState || "").toLowerCase();
+  const robotmode = String(dashboard.robotmode || "").toLowerCase();
+  const hasAny = Object.values(dashboard).some((v) => v != null);
+
+  if (running !== null) {
+    out.moving = running;
+  } else if (programState.includes("playing") || programState.includes("running")) {
+    out.moving = true;
+  } else if (programState.includes("stopped") || programState.includes("paused")) {
+    out.moving = false;
+  }
+
+  // If dashboard is reachable but robot reports disconnected/no controller, reflect that.
+  if (hasAny && (robotmode.includes("no controller") || robotmode.includes("disconnected"))) {
+    out.connection = "Disconnected";
+  } else if (!hasAny) {
+    out.connection = "Disconnected";
+  }
+
+  out.robotState = out.moving ? "Moving" : "Idle";
+  return out;
+}
+
 function scriptForMoveSquare(id) {
   const pose = getPoseForSquare(id);
   if (!pose) return null;
+  const n = getBoardNormal();
+  const hover = offsetAlongNormal(pose, APPROACH_D, n);
 
   return {
     type: "movej_ik",
-    script: poseToJointMove(pose, 1.0, 0.6),
+    script: poseToJointMove(hover, 1.0, 0.6),
     pose,
+    hover,
+    normal: n,
   };
 }
 
@@ -107,57 +162,37 @@ function scriptForPick(id) {
   const pose = getPoseForSquare(id);
   if (!pose) return null;
 
-  const n = getBoardNormal();
-  const hover = offsetAlongNormal(pose, APPROACH_D, n);
-  const touch = offsetAlongNormal(pose, TOUCH_D, n);
-  const lift  = offsetAlongNormal(pose, LIFT_D, n);
-
   const script = [
-    poseToJointMove(hover, 1.0, 0.6),
-    poseToJointMove(touch, 0.8, 0.4),
-
     gripCmd(GRIP_CLOSE),
     sleepSec(GRIP_DELAY_SEC),
-
-    poseToJointMove(lift, 1.0, 0.6),
-
-    SQUARES.HOME_Q ? movejQ(SQUARES.HOME_Q, 1.0, 0.6) : "",
   ].filter(Boolean).join("\n");
 
-  return { script, pose, hover, touch, lift, normal: n };
+  return { script, pose };
 }
 
 function scriptForPlace(id) {
   const pose = getPoseForSquare(id);
   if (!pose) return null;
 
-  const n = getBoardNormal();
-  const hover = offsetAlongNormal(pose, APPROACH_D, n);
-  const touch = offsetAlongNormal(pose, TOUCH_D, n);
-  const lift  = offsetAlongNormal(pose, LIFT_D, n);
-
   const script = [
-    poseToJointMove(hover, 1.0, 0.6),
-    poseToJointMove(touch, 0.8, 0.4),
-
     gripCmd(GRIP_OPEN),
     sleepSec(GRIP_DELAY_SEC),
-
-    poseToJointMove(lift, 1.0, 0.6),
-
-    SQUARES.HOME_Q ? movejQ(SQUARES.HOME_Q, 1.0, 0.6) : "",
   ].filter(Boolean).join("\n");
 
-  return { script, pose, hover, touch, lift, normal: n };
+  return { script, pose };
 }
 
 function scriptForTttMove(id) {
   const pose = ticTacToeSquareToPose(id);
   if (!pose) return null;
+  const n = getBoardNormal();
+  const hover = offsetAlongNormal(pose, APPROACH_D, n);
   return {
     type: "movej_ik",
-    script: poseToJointMove(pose, 1.0, 0.6),
+    script: poseToJointMove(hover, 1.0, 0.6),
     pose,
+    hover,
+    normal: n,
   };
 }
 
@@ -181,34 +216,68 @@ function scriptForTttMark(id) {
   return { script, pose, hover, touch, lift, normal: n };
 }
 
+function scriptForPickPlace(fromId, toId) {
+  const fromPose = getPoseForSquare(fromId);
+  const toPose = getPoseForSquare(toId);
+  if (!fromPose || !toPose) return null;
+
+  const n = getBoardNormal();
+  const fromHover = offsetAlongNormal(fromPose, APPROACH_D, n);
+  const fromTouch = offsetAlongNormal(fromPose, TOUCH_D, n);
+  const fromLift = offsetAlongNormal(fromPose, LIFT_D, n);
+  const toHover = offsetAlongNormal(toPose, APPROACH_D, n);
+  const toTouch = offsetAlongNormal(toPose, TOUCH_D, n);
+  const toLift = offsetAlongNormal(toPose, LIFT_D, n);
+
+  const script = [
+    poseToJointMove(fromHover, 1.0, 0.6),
+    poseToJointMove(fromTouch, 0.8, 0.4),
+    gripCmd(GRIP_CLOSE),
+    sleepSec(GRIP_DELAY_SEC),
+    poseToJointMove(fromLift, 1.0, 0.6),
+    poseToJointMove(toHover, 1.0, 0.6),
+    poseToJointMove(toTouch, 0.8, 0.4),
+    gripCmd(GRIP_OPEN),
+    sleepSec(GRIP_DELAY_SEC),
+    poseToJointMove(toLift, 1.0, 0.6),
+    SQUARES.HOME_Q ? movejQ(SQUARES.HOME_Q, 1.0, 0.6) : "",
+  ].filter(Boolean).join("\n");
+
+  return {
+    script,
+    normal: n,
+    from: { id: fromId, pose: fromPose, hover: fromHover, touch: fromTouch, lift: fromLift },
+    to: { id: toId, pose: toPose, hover: toHover, touch: toTouch, lift: toLift },
+  };
+}
+
 router.get("/status", async (req, res) => {
-  try {
-    const st = getState();
-    const token = getToken(req);
-    if (token) refreshLock(token);
-    res.json({
-      ok: true,
-      connection: "Connected",
-      robotState: st.moving ? "Moving" : "Idle",
-      lastAction: st.lastAction,
-      lastTarget: st.lastTarget,
-      time: Date.now(),
-      lock: getLockStatus(token),
-    });
-  } catch (e) {
-    const st = getState();
-    const token = getToken(req);
-    res.json({
-      ok: false,
-      connection: "Disconnected",
-      robotState: st.moving ? "Moving" : "Unknown",
-      error: e.message,
-      lastAction: st.lastAction,
-      lastTarget: st.lastTarget,
-      time: Date.now(),
-      lock: getLockStatus(token),
-    });
+  const st = getState();
+  const token = getToken(req);
+  if (token) refreshLock(token);
+
+  let dashboard = null;
+  if (ENABLE_DASHBOARD_STATUS) {
+    try {
+      dashboard = await getRobotStatus(DASHBOARD_HOST, DASHBOARD_PORT);
+    } catch {
+      dashboard = null;
+    }
   }
+
+  const live = inferRobotStateFromDashboard(dashboard, st.moving);
+  res.json({
+    ok: true,
+    connection: live.connection,
+    robotState: live.robotState,
+    moving: live.moving,
+    lastAction: st.lastAction,
+    lastTarget: st.lastTarget,
+    time: Date.now(),
+    boardProfile: getBoardProfileName(),
+    lock: getLockStatus(token),
+    dashboard: dashboard || undefined,
+  });
 });
 
 router.post("/lock/acquire", (req, res) => {
@@ -230,6 +299,25 @@ router.post("/lock/release", (req, res) => {
 router.get("/lock/status", (req, res) => {
   const token = getToken(req);
   res.json({ ok: true, lock: getLockStatus(token) });
+});
+
+router.get("/board/profiles", (req, res) => {
+  res.json({
+    ok: true,
+    active: getBoardProfileName(),
+    available: getBoardProfiles(),
+    board: CHESS_BOARD,
+  });
+});
+
+router.post("/board/profile/:id", (req, res) => {
+  if (!requireControlLock(req, res)) return;
+  const id = String(req.params.id || "").trim();
+  const board = setBoardProfile(id);
+  if (!board) {
+    return res.status(404).json({ ok: false, error: `Unknown board profile ${id}` });
+  }
+  res.json({ ok: true, active: getBoardProfileName(), board, available: getBoardProfiles() });
 });
 
 router.post("/moveSquare/:id", async (req, res) => {
@@ -280,7 +368,7 @@ router.post("/pick/:id", async (req, res) => {
 
     const dryRun = isDryRun(req);
     if (!dryRun) {
-      markMoving({ action: "pick", target: id, script: plan.script }, 3500);
+      markMoving({ action: "pick", target: id, script: plan.script }, 600);
       await sendURScript(UR_HOST, UR_PORT, plan.script);
     }
 
@@ -291,10 +379,6 @@ router.post("/pick/:id", async (req, res) => {
       target: id,
       script: plan.script,
       pose: plan.pose,
-      hover: plan.hover,
-      touch: plan.touch,
-      lift: plan.lift,
-      normal: plan.normal,
       gripper: { type: "digital_out", do: GRIP_DO, close: GRIP_CLOSE },
     });
   } catch (e) {
@@ -311,7 +395,7 @@ router.post("/place/:id", async (req, res) => {
 
     const dryRun = isDryRun(req);
     if (!dryRun) {
-      markMoving({ action: "place", target: id, script: plan.script }, 3500);
+      markMoving({ action: "place", target: id, script: plan.script }, 600);
       await sendURScript(UR_HOST, UR_PORT, plan.script);
     }
 
@@ -322,11 +406,43 @@ router.post("/place/:id", async (req, res) => {
       target: id,
       script: plan.script,
       pose: plan.pose,
-      hover: plan.hover,
-      touch: plan.touch,
-      lift: plan.lift,
-      normal: plan.normal,
       gripper: { type: "digital_out", do: GRIP_DO, open: GRIP_OPEN },
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+router.post("/chess/pickPlace", async (req, res) => {
+  try {
+    if (!requireControlLock(req, res)) return;
+
+    const from = String(req.body?.from || "").trim().toUpperCase();
+    const to = String(req.body?.to || "").trim().toUpperCase();
+    if (!/^[A-H][1-8]$/.test(from) || !/^[A-H][1-8]$/.test(to)) {
+      return res.status(400).json({ ok: false, error: "Body must include valid chess squares { from, to }" });
+    }
+
+    const plan = scriptForPickPlace(from, to);
+    if (!plan) return res.status(404).json({ ok: false, error: `Unknown square ${from} or ${to}` });
+
+    const dryRun = isDryRun(req);
+    if (!dryRun) {
+      markMoving({ action: "pickPlace", target: `${from}->${to}`, script: plan.script }, 7000);
+      await sendURScript(UR_HOST, UR_PORT, plan.script);
+    }
+
+    res.json({
+      ok: true,
+      action: "pickPlace",
+      dryRun,
+      from,
+      to,
+      script: plan.script,
+      normal: plan.normal,
+      fromPlan: plan.from,
+      toPlan: plan.to,
+      gripper: { type: "digital_out", do: GRIP_DO, close: GRIP_CLOSE, open: GRIP_OPEN },
     });
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
