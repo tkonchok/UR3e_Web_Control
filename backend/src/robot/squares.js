@@ -7,7 +7,7 @@ const SQUARES = {
 const BOARD_PROFILES = {
   table_front: {
     label: "Board on table in front of robot",
-    squareSizeM: 0.05715,
+    squareSizeM: 0.05700,
     flattenZ: true,
     orientationInterpolation: false,
     fileRotGain: 0.35,
@@ -20,28 +20,28 @@ const BOARD_PROFILES = {
     flipNormal: false,
     anchors: {
       A1: {
-        x: 0.74461,
-        y: 0.06695,
-        z: 0.24886,
-        rx: 2.339,
-        ry: -2.390,
-        rz: 2.519,
+        x: 0.40178,
+        y: 0.21478,
+        z: 0.05634,
+        rx: 2.204,
+        ry: -2.277,
+        rz: 0.036,
       },
       B1: {
-        x: 0.74574,
-        y: 0.04265,
-        z: 0.24960,
-        rx: 2.296,
-        ry: -2.397,
-        rz: 2.541,
+        x: 0.40178,
+        y: 0.15778,
+        z: 0.05634,
+        rx: 2.204,
+        ry: -2.277,
+        rz: 0.036,
       },
       A2: {
-        x: 0.73806,
-        y: 0.06481,
-        z: 0.25476,
-        rx: 2.343,
-        ry: -2.389,
-        rz: 2.509,
+        x: 0.45878,
+        y: 0.21478,
+        z: 0.05634,
+        rx: 2.204,
+        ry: -2.277,
+        rz: 0.036,
       },
     },
   },
@@ -60,30 +60,28 @@ const BOARD_PROFILES = {
     flipNormal: false,
     anchors: {
       A1: {
-        x:0.60502,
-        y:0.18601,
-        z:0.15810,
-        rx:2.116,
-        ry:-2.422,
-        rz:2.678,
-
+        x: 0.63632,
+        y: 0.22153,
+        z: 0.13163,
+        rx: 2.298,
+        ry: -2.474,
+        rz: 2.432,
       },
       B1: {
-        x:0.60502,
-        y:0.12901,
-        z:0.15810,
-        rx:2.223,
-        ry:-2.407,
-        rz:2.660,
-
+        x: 0.63632,
+        y: 0.16453,
+        z: 0.13163,
+        rx: 2.298,
+        ry: -2.474,
+        rz: 2.432,
       },
       A2: {
-        x:0.60502,
-        y:0.18601,
-        z:0.2151,
-        rx:2.157,
-        ry:-2.449,
-        rz:2.561,
+        x: 0.63632,
+        y: 0.22153,
+        z: 0.18863,
+        rx: 2.298,
+        ry: -2.474,
+        rz: 2.432,
       },
     },
   },
@@ -95,7 +93,9 @@ if (!BOARD_PROFILES[activeBoardProfile]) {
 }
 
 const MIN_Z = 0.05;
-function clampZ(z) { return Math.max(z, MIN_Z); }
+function clampZ(z) {
+  return Math.max(z, MIN_Z);
+}
 
 function vec(a, b) { return { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z }; }
 function dot(u, v) { return u.x * v.x + u.y * v.y + u.z * v.z; }
@@ -186,16 +186,20 @@ function buildBoard(profileName = activeBoardProfile) {
     rz: (A2.rz - A1.rz) / rankSpan,
   };
 
-  const fileRotDelta = profile.orientationInterpolation === false ? { rx: 0, ry: 0, rz: 0 } : {
-    rx: clamp(rawFileDelta.rx * fileGain, -maxStep, maxStep),
-    ry: clamp(rawFileDelta.ry * fileGain, -maxStep, maxStep),
-    rz: clamp(rawFileDelta.rz * fileGain, -maxStep, maxStep),
-  };
-  const rankRotDelta = profile.orientationInterpolation === false ? { rx: 0, ry: 0, rz: 0 } : {
-    rx: clamp(rawRankDelta.rx * rankGain, -maxStep, maxStep),
-    ry: clamp(rawRankDelta.ry * rankGain, -maxStep, maxStep),
-    rz: clamp(rawRankDelta.rz * rankGain, -maxStep, maxStep),
-  };
+  const fileRotDelta = profile.orientationInterpolation === false
+    ? { rx: 0, ry: 0, rz: 0 }
+    : {
+      rx: clamp(rawFileDelta.rx * fileGain, -maxStep, maxStep),
+      ry: clamp(rawFileDelta.ry * fileGain, -maxStep, maxStep),
+      rz: clamp(rawFileDelta.rz * fileGain, -maxStep, maxStep),
+    };
+  const rankRotDelta = profile.orientationInterpolation === false
+    ? { rx: 0, ry: 0, rz: 0 }
+    : {
+      rx: clamp(rawRankDelta.rx * rankGain, -maxStep, maxStep),
+      ry: clamp(rawRankDelta.ry * rankGain, -maxStep, maxStep),
+      rz: clamp(rawRankDelta.rz * rankGain, -maxStep, maxStep),
+    };
 
   return {
     profile: profileName,
