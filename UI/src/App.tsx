@@ -32,8 +32,8 @@ function withControlHeaders(headers?: HeadersInit) {
   return { ...(headers || {}), "x-control-token": token };
 }
 
-//POST helper.
-async function postJSON<T>(url: string, body?: any, headers?: HeadersInit): Promise<T> {
+// POST helper.
+async function postJSON<T>(url: string, body?: unknown, headers?: HeadersInit): Promise<T> {
   const res = await fetch(url, {
     method: "POST",
     headers: withControlHeaders(body ? { "Content-Type": "application/json", ...(headers || {}) } : headers),
@@ -41,17 +41,22 @@ async function postJSON<T>(url: string, body?: any, headers?: HeadersInit): Prom
   });
 
   const text = await res.text();
-  let data: any;
+  let data: Record<string, unknown>;
   try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
 
   if (!res.ok) {
-    throw new Error(data?.error || data?.message || `HTTP ${res.status}`);
+    const message = String(data?.error || data?.message || `HTTP ${res.status}`);
+    throw new Error(message);
   }
   return data as T;
 }
 
 function isChessSquare(square: string) {
   return /^[A-H][1-8]$/i.test(square.trim());
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export default function App() {
@@ -147,9 +152,9 @@ export default function App() {
       if (mode === "Chess" && !data.dryRun) {
         setLastMovedSquare(sq);
       }
-      setFeedbackMessage(data.dryRun ? `Dry-run OK: ${data.script}` : `Sent: ${data.script}`);
-    } catch (e: any) {
-      setFeedbackMessage(`error: ${e.message}`);
+      setFeedbackMessage(data.dryRun ? `Dry-run ON: command generated only (robot will not move)` : `Sent: ${data.script}`);
+    } catch (error) {
+      setFeedbackMessage(`error: ${getErrorMessage(error)}`);
     }
   };
 
@@ -174,7 +179,10 @@ export default function App() {
       setLastCommand(`mark ${tttPlayer} → ${raw}`);
       setFeedbackMessage(`Sending mark(${raw})...`);
 
-      const data = await postJSON<any>(`/api/ttt/mark/${encodeURIComponent(raw)}?dryRun=${dryRun ? 1 : 0}`);
+      const data = await postJSON<any>(
+        `/api/ttt/mark/${encodeURIComponent(raw)}?dryRun=${dryRun ? 1 : 0}`,
+        { symbol: tttPlayer },
+      );
 
       const nextBoard = [...tttBoard];
       nextBoard[idx] = tttPlayer;
@@ -183,9 +191,9 @@ export default function App() {
       setTttWinner(winner);
       if (!winner) setTttPlayer(tttPlayer === 'X' ? 'O' : 'X');
 
-      setFeedbackMessage(data.dryRun ? `Dry-run OK: ${data.script}` : `Marked ${raw}`);
-    } catch (e: any) {
-      setFeedbackMessage(`error: ${e.message}`);
+      setFeedbackMessage(data.dryRun ? `Dry-run ON: mark script generated only (robot will not move)` : `Marked ${data.symbol || tttPlayer} at ${raw}`);
+    } catch (error) {
+      setFeedbackMessage(`error: ${getErrorMessage(error)}`);
     }
   };
 
@@ -197,81 +205,81 @@ export default function App() {
   };
 
   const handlePick = async () => {
-  try {
-    const sq = targetSquare.trim().toUpperCase();
-    if (!isChessSquare(sq)) {
-      setFeedbackMessage("error: invalid chess square");
-      return;
-    }
-    if (blockIsHeld) {
-      setFeedbackMessage("error: block already held by robot. Place it first.");
-      return;
-    }
-    if (chessBlockSquare && sq !== chessBlockSquare) {
-      setFeedbackMessage(`error: block is currently at ${chessBlockSquare}`);
-      return;
-    }
-    if (!dryRun && lastMovedSquare !== sq) {
-      setFeedbackMessage(`error: move robot to ${sq} first, then press Pick`);
-      return;
-    }
+    try {
+      const sq = targetSquare.trim().toUpperCase();
+      if (!isChessSquare(sq)) {
+        setFeedbackMessage("error: invalid chess square");
+        return;
+      }
+      if (blockIsHeld) {
+        setFeedbackMessage("error: block already held by robot. Place it first.");
+        return;
+      }
+      if (chessBlockSquare && sq !== chessBlockSquare) {
+        setFeedbackMessage(`error: block is currently at ${chessBlockSquare}`);
+        return;
+      }
+      if (!dryRun && lastMovedSquare !== sq) {
+        setFeedbackMessage(`error: move robot to ${sq} first, then press Pick`);
+        return;
+      }
 
-    setLastCommand(`pick → ${sq}`);
-    setFeedbackMessage(`Sending pick(${sq})...`);
+      setLastCommand(`pick → ${sq}`);
+      setFeedbackMessage(`Sending pick(${sq})...`);
 
-    const data = await postJSON<any>(`/api/pick/${encodeURIComponent(sq)}?dryRun=${dryRun ? 1 : 0}`);
-    if (!data.dryRun) {
-      setChessBlockSquare(null);
-    }
+      const data = await postJSON<any>(`/api/pick/${encodeURIComponent(sq)}?dryRun=${dryRun ? 1 : 0}`);
+      if (!data.dryRun) {
+        setChessBlockSquare(null);
+      }
 
-    setFeedbackMessage(data.dryRun ? `Dry-run OK: ${data.script}` : `Suction ON at ${data.target} (block held)`);
-  } catch (e: any) {
-    setFeedbackMessage(`error: ${e.message}`);
+      setFeedbackMessage(data.dryRun ? `Dry-run OK: ${data.script}` : `Suction ON at ${data.target} (block held)`);
+    } catch (error) {
+      setFeedbackMessage(`error: ${getErrorMessage(error)}`);
     }
   };
 
   const handlePlace = async () => {
-  try {
-    const sq = targetSquare.trim().toUpperCase();
-    if (!isChessSquare(sq)) {
-      setFeedbackMessage("error: invalid chess square");
-      return;
-    }
-    if (!blockIsHeld) {
-      setFeedbackMessage(`error: block is on board at ${chessBlockSquare}. Pick it first.`);
-      return;
-    }
-    if (!dryRun && lastMovedSquare !== sq) {
-      setFeedbackMessage(`error: move robot to ${sq} first, then press Place`);
-      return;
-    }
+    try {
+      const sq = targetSquare.trim().toUpperCase();
+      if (!isChessSquare(sq)) {
+        setFeedbackMessage("error: invalid chess square");
+        return;
+      }
+      if (!blockIsHeld) {
+        setFeedbackMessage(`error: block is on board at ${chessBlockSquare}. Pick it first.`);
+        return;
+      }
+      if (!dryRun && lastMovedSquare !== sq) {
+        setFeedbackMessage(`error: move robot to ${sq} first, then press Place`);
+        return;
+      }
 
-    setLastCommand(`place → ${sq}`);
-    setFeedbackMessage(`Sending place(${sq})...`);
+      setLastCommand(`place → ${sq}`);
+      setFeedbackMessage(`Sending place(${sq})...`);
 
-    const data = await postJSON<any>(`/api/place/${encodeURIComponent(sq)}?dryRun=${dryRun ? 1 : 0}`);
-    if (!data.dryRun) {
-      setChessBlockSquare(sq);
-      setSelectedSquare(sq);
-      setTargetSquare(sq);
-    }
+      const data = await postJSON<any>(`/api/place/${encodeURIComponent(sq)}?dryRun=${dryRun ? 1 : 0}`);
+      if (!data.dryRun) {
+        setChessBlockSquare(sq);
+        setSelectedSquare(sq);
+        setTargetSquare(sq);
+      }
 
-    setFeedbackMessage(data.dryRun ? `Dry-run OK: ${data.script}` : `Suction OFF at ${data.target}`);
-  } catch (e: any) {
-    setFeedbackMessage(`error: ${e.message}`);
+      setFeedbackMessage(data.dryRun ? `Dry-run OK: ${data.script}` : `Suction OFF at ${data.target}`);
+    } catch (error) {
+      setFeedbackMessage(`error: ${getErrorMessage(error)}`);
     }
   };
 
   const handleHome = async () => {
-  try {
-    setLastCommand("home");
-    setFeedbackMessage("Sending home...");
+    try {
+      setLastCommand("home");
+      setFeedbackMessage("Sending home...");
 
-    const data = await postJSON<any>(`/api/home?dryRun=${dryRun ? 1 : 0}`);
+      const data = await postJSON<any>(`/api/home?dryRun=${dryRun ? 1 : 0}`);
 
-    setFeedbackMessage(data.dryRun ? `Dry-run OK: ${data.script}` : "Home sent");
-  } catch (e: any) {
-    setFeedbackMessage(`error: ${e.message}`);
+      setFeedbackMessage(data.dryRun ? `Dry-run OK: ${data.script}` : "Home sent");
+    } catch (error) {
+      setFeedbackMessage(`error: ${getErrorMessage(error)}`);
     }
   };
 
@@ -282,8 +290,8 @@ export default function App() {
       const data = await res.json();
       setBoardProfile(String(data.active || "table_front"));
       setBoardProfileOptions(Array.isArray(data.available) ? data.available : []);
-    } catch (e: any) {
-      setFeedbackMessage((msg) => (msg.startsWith("error:") ? msg : `error: ${e.message}`));
+    } catch (error) {
+      setFeedbackMessage((msg) => (msg.startsWith("error:") ? msg : `error: ${getErrorMessage(error)}`));
     }
   };
 
@@ -293,8 +301,8 @@ export default function App() {
       setBoardProfile(String(data.active || profileId));
       setBoardProfileOptions(Array.isArray(data.available) ? data.available : []);
       setFeedbackMessage(`Board profile set to ${String(data.active || profileId)}`);
-    } catch (e: any) {
-      setFeedbackMessage(`error: ${e.message}`);
+    } catch (error) {
+      setFeedbackMessage(`error: ${getErrorMessage(error)}`);
     }
   };
 
@@ -304,9 +312,9 @@ export default function App() {
       setControlToken(data.token);
       setControlStatus("YOU");
       setFeedbackMessage("Control acquired");
-    } catch (e: any) {
+    } catch (error) {
       setControlStatus("Read-only");
-      setFeedbackMessage(`error: ${e.message}`);
+      setFeedbackMessage(`error: ${getErrorMessage(error)}`);
     }
   };
 
@@ -320,58 +328,61 @@ export default function App() {
   };
 
   type StatusResponse = {
-  ok: boolean;
-  connection: ConnectionStatus | string;
-  robotState: RobotState | string;
-  lastAction?: string | null;
-  lastTarget?: string | null;
-  boardProfile?: string;
-  lock?: { held: boolean; yours: boolean; expiresInMs: number };
-};
-
-useEffect(() => {
-  const token = getControlToken();
-  if (token) {
-    postJSON<any>("/api/lock/acquire").catch(() => {});
-  } else {
-    acquireControl();
-  }
-  refreshBoardProfiles();
-}, []);
-
-useEffect(() => {
-  let cancelled = false;
-
-  const tick = async () => {
-    try {
-      const res = await fetch("/api/status", { cache: "no-store", headers: withControlHeaders() });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data: StatusResponse = await res.json();
-
-      if (cancelled) return;
-
-      setConnectionStatus(data.connection === "Connected" ? "Connected" : "Disconnected");
-      setRobotState(data.robotState === "Moving" ? "Moving" : "Idle");
-      if (data.boardProfile) setBoardProfile(String(data.boardProfile));
-      if (data.lock) {
-        setControlStatus(data.lock.yours ? "YOU" : "Read-only");
-      }
-      if (data.lastAction && data.lastTarget) {
-        const action = String(data.lastAction);
-        const target = String(data.lastTarget);
-        if (action === "tttMove" || action === "moveSquare") {
-          setLastMovedSquare(target);
-        }
-      }
-    } catch {
-      if (!cancelled) setConnectionStatus("Disconnected");
-    }
+    ok: boolean;
+    connection: ConnectionStatus | string;
+    robotState: RobotState | string;
+    lastAction?: string | null;
+    lastTarget?: string | null;
+    boardProfile?: string;
+    lock?: { held: boolean; yours: boolean; expiresInMs: number };
   };
 
-  tick();
-  const id = setInterval(tick, 400);
-  return () => { cancelled = true; clearInterval(id); };
-}, []);
+  useEffect(() => {
+    const token = getControlToken();
+    if (token) {
+      postJSON<any>("/api/lock/acquire").catch(() => {});
+    } else {
+      acquireControl();
+    }
+    refreshBoardProfiles();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const tick = async () => {
+      try {
+        const res = await fetch("/api/status", { cache: "no-store", headers: withControlHeaders() });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data: StatusResponse = await res.json();
+
+        if (cancelled) return;
+
+        setConnectionStatus(data.connection === "Connected" ? "Connected" : "Disconnected");
+        setRobotState(data.robotState === "Moving" ? "Moving" : "Idle");
+        if (data.boardProfile) setBoardProfile(String(data.boardProfile));
+        if (data.lock) {
+          setControlStatus(data.lock.yours ? "YOU" : "Read-only");
+        }
+        if (data.lastAction && data.lastTarget) {
+          const action = String(data.lastAction);
+          const target = String(data.lastTarget);
+          if (action === "tttMove" || action === "moveSquare") {
+            setLastMovedSquare(target);
+          }
+        }
+      } catch {
+        if (!cancelled) setConnectionStatus("Disconnected");
+      }
+    };
+
+    tick();
+    const id = setInterval(tick, 400);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
 
   return (
     <div className="h-screen flex flex-col bg-slate-50">
