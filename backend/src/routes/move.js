@@ -124,6 +124,10 @@ function inferRobotStateFromDashboard(dashboard, fallbackMoving) {
   const robotmode = String(dashboard.robotmode || "").toLowerCase();
   const hasAny = Object.values(dashboard).some((v) => v != null);
 
+  if (!hasAny) {
+    return out;
+  }
+
   if (running !== null) {
     out.moving = running;
   } else if (programState.includes("playing") || programState.includes("running")) {
@@ -133,9 +137,7 @@ function inferRobotStateFromDashboard(dashboard, fallbackMoving) {
   }
 
   // If dashboard is reachable but robot reports disconnected/no controller, reflect that.
-  if (hasAny && (robotmode.includes("no controller") || robotmode.includes("disconnected"))) {
-    out.connection = "Disconnected";
-  } else if (!hasAny) {
+  if (robotmode.includes("no controller") || robotmode.includes("disconnected")) {
     out.connection = "Disconnected";
   }
 
