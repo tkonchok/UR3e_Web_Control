@@ -5,21 +5,42 @@ This project is a web-based control system for a Universal Robots UR3e arm, deve
 
 The frontend sends commands to a Node.js backend, which generates URScript and dispatches it to URSim/robot controllers.
 
+---
+
+---
+
+
 ## Current Features
 - Chess mode:
   - Square mapping (A1-H8)
   - Move-to-square
   - Suction pick and suction place
+---
+<img width="1043" height="652" alt="Screenshot 2026-03-04 at 8 24 06 PM" src="https://github.com/user-attachments/assets/9f6d171e-7a8d-4139-9445-6dd69d40f3b0" />
+
+---
+
 - Tic-Tac-Toe mode:
   - Cell mapping (1-9)
   - Move-to-cell
   - Mark X/O trajectories
+---
+<img width="1043" height="652" alt="Screenshot 2026-03-04 at 8 24 37 PM" src="https://github.com/user-attachments/assets/25ce2d28-bddd-4413-8e01-fd33fcfb668b" />
+
+---
+
 - Whiteboard mode:
   - PNG/JPG image upload
   - OpenCV vectorization pipeline (Python)
   - Drawing preview before execution
   - Execute draw and stop draw
   - ETA estimate for drawing jobs
+  
+---
+<img width="1083" height="711" alt="Screenshot 2026-03-04 at 8 25 25 PM" src="https://github.com/user-attachments/assets/77445521-5887-4aab-b382-cb4bf901d6e0" />
+
+---
+
 - System behavior:
   - Dry-run mode (generate scripts without movement)
   - RTDE-based live movement status
