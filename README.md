@@ -6,6 +6,7 @@ This project is a web-based control system for a Universal Robots UR3e arm, deve
 The frontend sends commands to a Node.js backend, which generates URScript and dispatches it to URSim/robot controllers.
 
 ---
+<img width="1020" height="636" alt="Screenshot 2026-01-26 at 4 49 49 PM" src="https://github.com/user-attachments/assets/dfe229ad-0d32-4faa-b3da-c1e987790139" />
 
 ---
 
