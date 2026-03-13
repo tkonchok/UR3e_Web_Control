@@ -1,6 +1,6 @@
 # UR3e Web Control Architecture
 
-This document is meant for code review and project handoff. It can also be exported to PDF later if you want a static attachment.
+This document is meant for code review and project handoff.
 
 ## Main File Map
 
@@ -96,5 +96,5 @@ flowchart LR
 ## Known Limitations
 - Physical calibration still requires manual tuning.
 - Draw quality depends heavily on clean, high-contrast inputs.
-- ETA is an estimate based on path length and configured speeds; it is not a full motion simulator.
-- Validation is still mostly simulator-based and manual.
+- ETA is an estimate based on path length and configured speeds, it is not a full motion simulator.
+- Validation is still mostly simulator based and manual.
