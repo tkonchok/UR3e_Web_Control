@@ -1,7 +1,7 @@
 # UR3e Web Control
 
 ## Overview
-This project is a web-based control system for a Universal Robots UR3e arm, developed and tested in URSim first, then prepared for physical deployment.
+This project is a web-based control system for a Universal Robots UR3e arm, developed and tested in URSim.
 
 The frontend sends commands to a Node.js backend, which generates URScript and dispatches it to URSim/robot controllers.
 
@@ -137,7 +137,7 @@ Calibration profile defaults:
 - `WHITEBOARD_PROFILE` (`wall_default` or `table_marker`)
 
 ## Usage
-
+Make Sure Dry-run is off to actually see the robot movements
 ### Chess Mode
 1. Select target square.
 2. Move to square.
@@ -157,7 +157,6 @@ Calibration profile defaults:
 5. Use Stop Draw if needed.
 
 ## Notes
-- SVG/text direct draw input is currently disabled; image input is the supported path.
 - Preview first, then execute, especially for high-detail images.
 - Best results come from high-contrast images with simple backgrounds.
 - Calibration quality directly affects physical drawing/pick accuracy.
