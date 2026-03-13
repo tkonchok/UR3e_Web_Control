@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#OpenCV vectorizer. Reads a base64 image from stdin and returns normalized contour strokes.
 import base64
 import json
 import math
@@ -8,11 +9,13 @@ import cv2
 import numpy as np
 
 
+#Return a structured JSON error so the Node side can surface it cleanly.
 def fail(msg: str):
     print(json.dumps({"ok": False, "error": msg}))
     sys.exit(1)
 
 
+#Clamp integer inputs from the payload into a safe range.
 def clamp_int(v, lo, hi):
     try:
         n = int(v)
@@ -21,6 +24,7 @@ def clamp_int(v, lo, hi):
     return max(lo, min(hi, n))
 
 
+#Accept bool-like payload values from the JS side.
 def parse_bool(v, default=False):
     if isinstance(v, bool):
         return v
@@ -35,6 +39,7 @@ def parse_bool(v, default=False):
     return default
 
 
+#Read one JSON payload from stdin.
 def parse_input():
     raw = sys.stdin.read()
     if not raw:
@@ -45,6 +50,7 @@ def parse_input():
         fail(f"Invalid JSON input: {exc}")
 
 
+#Decode the uploaded base64 image into an OpenCV matrix.
 def image_from_base64(data_b64: str):
     try:
         b = base64.b64decode(data_b64, validate=True)
@@ -57,6 +63,7 @@ def image_from_base64(data_b64: str):
     return img
 
 
+#Resize and smooth the image before contour extraction.
 def preprocess(img, max_dim, blur_ksize):
     h, w = img.shape[:2]
     if max(h, w) > max_dim:
@@ -65,6 +72,7 @@ def preprocess(img, max_dim, blur_ksize):
         nh = max(1, int(round(h * scale)))
         img = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_AREA)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # Light blur reduces edge noise before contour extraction.
     if blur_ksize >= 3:
         if blur_ksize % 2 == 0:
             blur_ksize += 1
@@ -72,11 +80,12 @@ def preprocess(img, max_dim, blur_ksize):
     return gray, img
 
 
+#Build a mask that works for both dark strokes and bright colored logos.
 def build_binary_outline_mask(gray, bgr):
-    # Grayscale threshold catches dark strokes.
+    #Grayscale threshold catches dark strokes.
     _, mask = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
-    # Color-distance threshold catches bright colors (e.g., yellow) on light backgrounds.
+    #Color-distance threshold catches bright colors on light backgrounds.
     lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
     h, w = lab.shape[:2]
     border = np.concatenate(
@@ -88,12 +97,13 @@ def build_binary_outline_mask(gray, bgr):
     _, mask_color = cv2.threshold(dist_u8, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     mask = cv2.bitwise_or(mask, mask_color)
 
-    # Light denoise only; avoid closing so inner holes are preserved.
+    #Light denoise only, avoid closing so inner holes are preserved.
     kernel = np.ones((2, 2), dtype=np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
     return mask
 
 
+#Convert one OpenCV contour into normalized [x, y] points.
 def contour_to_points(cnt, w, h, approx_eps_frac):
     peri = cv2.arcLength(cnt, True)
     eps = max(0.5, approx_eps_frac * peri)
@@ -117,7 +127,7 @@ def contour_to_points(cnt, w, h, approx_eps_frac):
     if len(out) < 2:
         return None
 
-    # If contour is closed, close the polyline for drawing continuity.
+    #Close the polyline so the robot draws a full loop for closed contours.
     dx = out[0][0] - out[-1][0]
     dy = out[0][1] - out[-1][1]
     if math.sqrt(dx * dx + dy * dy) > 1e-6:
@@ -125,6 +135,7 @@ def contour_to_points(cnt, w, h, approx_eps_frac):
     return out
 
 
+#Oneshot CLI entry used by vectorizeImage.js.
 def main():
     payload = parse_input()
     image_b64 = payload.get("imageBase64")
@@ -169,7 +180,7 @@ def main():
             continue
         strokes.append((peri, points))
 
-    # Largest contours first to prioritize major shapes.
+    #Largest contours first keeps the main logo/text outlines if we hit max_contours.
     strokes.sort(key=lambda it: it[0], reverse=True)
     strokes = strokes[:max_contours]
     out_strokes = [s[1] for s in strokes]

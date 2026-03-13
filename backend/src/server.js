@@ -1,3 +1,4 @@
+//Backend entrypoint. Mounts API routes and starts background robot connections.
 const express = require("express");
 const cors = require("cors");
 const moveRoutes = require("./routes/move");

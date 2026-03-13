@@ -1,3 +1,4 @@
+//Whiteboard frame calibration. Maps normalized draw points into robot poses.
 const WHITEBOARD_PROFILES = {
   wall_default: {
     label: "Whiteboard on wall in front of robot",
@@ -52,6 +53,7 @@ if (!WHITEBOARD_PROFILES[activeWhiteboardProfile]) {
   activeWhiteboardProfile = "wall_default";
 }
 
+//Vector helpers for frame construction.
 function sub(a, b) {
   return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z };
 }
@@ -86,11 +88,13 @@ function cross(a, b) {
   };
 }
 
+//Build the active whiteboard frame from three anchors.
 function buildFrame(profileName = activeWhiteboardProfile) {
   const profile = WHITEBOARD_PROFILES[profileName];
   if (!profile) return null;
 
   const { topLeft, topRight, bottomLeft } = profile.anchors;
+  //u = left->right axis, v = top->bottom axis in workspace coordinates.
   const uVec = sub(topRight, topLeft);
   const vVec = sub(bottomLeft, topLeft);
   const uDir = norm(uVec);
@@ -116,6 +120,7 @@ function buildFrame(profileName = activeWhiteboardProfile) {
 
 const WHITEBOARD_FRAME = buildFrame();
 
+//Swap to a new whiteboard calibration profile in place.
 function setWhiteboardProfile(name) {
   if (!WHITEBOARD_PROFILES[name]) return null;
   activeWhiteboardProfile = name;
@@ -133,7 +138,9 @@ function getWhiteboardProfiles() {
   return Object.entries(WHITEBOARD_PROFILES).map(([id, p]) => ({ id, label: p.label }));
 }
 
+//Convert normalized draw coordinates into a robot pose on the whiteboard plane.
 function pointToPose(u, v) {
+  //Clamp preview/planner values into the calibrated frame before generating a pose.
   const uu = Math.max(0, Math.min(1, Number(u)));
   const vv = Math.max(0, Math.min(1, Number(v)));
   const origin = WHITEBOARD_FRAME.origin || { x: 0, y: 0, z: 0 };
@@ -157,4 +164,3 @@ module.exports = {
   setWhiteboardProfile,
   pointToPose,
 };
-

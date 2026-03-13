@@ -1,3 +1,4 @@
+//small dashboard client used as a fallback status source when RTDE is unavailable.
 const net = require("net");
 
 function sendDashboard(cmd, host = "localhost", port = 29999, timeoutMs = 800) {

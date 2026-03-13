@@ -1,15 +1,19 @@
+//Node bridge for the OpenCV stage. It validates the image payload and launches Python.
 const path = require("path");
 const { spawn } = require("child_process");
 
+//Parse a value as a finite number or fall back to a default.
 function toFiniteNumber(value, fallback) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
 
+//Clamp a numeric value into a safe range.
 function clamp(value, lo, hi) {
   return Math.max(lo, Math.min(hi, value));
 }
 
+//Accept flexible bool-like values from UI payloads and env vars.
 function toBoolean(value, fallback = false) {
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return value !== 0;
@@ -21,7 +25,9 @@ function toBoolean(value, fallback = false) {
   return fallback;
 }
 
+//Clean and bound the vectorizer settings before they reach Python.
 function sanitizeVectorizeOptions(options = {}) {
+  //Clamp UI tuning values so Python/OpenCV only sees sane ranges.
   return {
     maxDim: Math.round(clamp(toFiniteNumber(options.maxDim, 1024), 128, 2048)),
     blurKsize: Math.round(clamp(toFiniteNumber(options.blurKsize, 5), 0, 31)),
@@ -35,6 +41,7 @@ function sanitizeVectorizeOptions(options = {}) {
   };
 }
 
+//Split a base64 data URL into mime type and payload.
 function parseDataUrl(dataUrl) {
   const s = String(dataUrl || "").trim();
   const m = s.match(/^data:([^;,]+)?(?:;charset=[^;,]+)?;base64,(.+)$/i);
@@ -52,6 +59,7 @@ function parseDataUrl(dataUrl) {
   return { mime, base64: b64 };
 }
 
+//Run the Python vectorizer once and parse its JSON response.
 function runPythonVectorize(payload, timeoutMs = 20000) {
   return new Promise((resolve, reject) => {
     const python = process.env.PYTHON_BIN || "python3";
@@ -95,11 +103,13 @@ function runPythonVectorize(payload, timeoutMs = 20000) {
       }
     });
 
+    //The Python script reads one JSON payload from stdin and prints one JSON response.
     proc.stdin.write(JSON.stringify(payload));
     proc.stdin.end();
   });
 }
 
+//Public entry for image vectorization from the draw route.
 async function vectorizeImageDataUrl(imageDataUrl, options = {}) {
   const { base64 } = parseDataUrl(imageDataUrl);
   const cfg = sanitizeVectorizeOptions(options);

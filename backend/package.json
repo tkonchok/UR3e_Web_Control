@@ -1,10 +1,12 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "UR3e Web Control backend",
+  "main": "src/server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node src/server.js",
+    "check": "node --check src/server.js && node --check src/routes/move.js && node --check src/routes/draw.js && node --check src/robot/urTcp.js && node --check src/robot/urRtde.js && node --check src/robot/urDashboard.js && node --check src/robot/squares.js && node --check src/robot/whiteboard.js && node --check src/robot/state.js && node --check src/draw/vectorizeImage.js && node --check src/draw/planner.js",
+    "test": "npm run check"
   },
   "keywords": [],
   "author": "",

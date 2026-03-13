@@ -1,10 +1,12 @@
+//Whiteboard drawing routes. Preview and execute share the same planning path.
 const express = require("express");
 const { sendURScript } = require("../robot/urTcp");
 const {
+  isDryRun,
+  requireControlLock,
+} = require("./control");
+const {
   markMoving,
-  acquireLock,
-  refreshLock,
-  getLockStatus,
 } = require("../robot/state");
 const { planDrawingFromInput } = require("../draw/planner");
 const { vectorizeImageDataUrl } = require("../draw/vectorizeImage");
@@ -31,37 +33,6 @@ const MAX_POINTS = Number(process.env.DRAW_MAX_POINTS || 12000);
 const MAX_PATH_M = Number(process.env.DRAW_MAX_PATH_M || 14.0);
 const MAX_SCRIPT_LINES = Number(process.env.DRAW_MAX_SCRIPT_LINES || 16000);
 
-function isDryRun(req) {
-  return req.query.dryRun === "1";
-}
-
-function getToken(req) {
-  return req.headers["x-control-token"] || req.query.token || null;
-}
-
-function requireControlLock(req, res) {
-  const token = getToken(req);
-  if (!token) {
-    res.status(401).json({ ok: false, error: "Control token required" });
-    return null;
-  }
-
-  const lock = getLockStatus(token);
-  if (!lock.held) {
-    const acquired = acquireLock(token);
-    if (!acquired.ok) {
-      res.status(423).json({ ok: false, error: "Control locked by another client" });
-      return null;
-    }
-  } else if (!lock.yours) {
-    res.status(423).json({ ok: false, error: "Control locked by another client" });
-    return null;
-  }
-
-  refreshLock(token);
-  return token;
-}
-
 function poseToJointMove(pose, a = 1.0, v = 0.6) {
   return `movej(get_inverse_kin(p[${pose.x},${pose.y},${pose.z},${pose.rx},${pose.ry},${pose.rz}], get_actual_joint_positions()), a=${a}, v=${v})`;
 }
@@ -79,6 +50,7 @@ function offsetAlongNormal(pose, s, normal) {
   };
 }
 
+//Build a joint space approach plus linear pen path from normalized strokes.
 function buildScriptFromStrokes(strokesNormalized) {
   const normal = WHITEBOARD_FRAME.normal || { x: 0, y: 0, z: 1 };
   const scriptLines = [];
@@ -89,6 +61,7 @@ function buildScriptFromStrokes(strokesNormalized) {
     const firstUp = offsetAlongNormal(first, PEN_UP_D, normal);
     const firstDown = offsetAlongNormal(first, PEN_DOWN_D, normal);
 
+    //Travel above the board first, then drop the pen only for the actual stroke.
     scriptLines.push(
       poseToJointMove(firstUp, TRAVEL_A, TRAVEL_V),
       poseToLinearMove(firstDown, DRAW_A, Math.min(DRAW_V, 0.02)),
@@ -112,11 +85,13 @@ function buildScriptFromStrokes(strokesNormalized) {
   };
 }
 
+//Estimate physical pen travel in meters using the calibrated whiteboard frame.
 function estimatePathLengthMeters(strokesNormalized) {
   const uVec = WHITEBOARD_FRAME.uVec || { x: 0, y: 0, z: 0 };
   const vVec = WHITEBOARD_FRAME.vVec || { x: 0, y: 0, z: 0 };
   let total = 0;
 
+  //Path length is measured in workspace meters, not normalized image units.
   for (const stroke of strokesNormalized) {
     for (let i = 1; i < stroke.length; i += 1) {
       const dx = stroke[i].x - stroke[i - 1].x;
@@ -130,6 +105,7 @@ function estimatePathLengthMeters(strokesNormalized) {
   return total;
 }
 
+//Reject oversized jobs before they hit the robot.
 function evaluateSafety(plan, built) {
   const pathLengthM = estimatePathLengthMeters(plan.strokesNormalized);
   const violations = [];
@@ -164,6 +140,7 @@ function evaluateSafety(plan, built) {
   };
 }
 
+//Rough ETA model used for preview feedback in the UI.
 function estimateDrawTiming(plan, pathLengthM) {
   const drawSpeed = Math.max(0.005, DRAW_V);
   const travelSpeed = Math.max(0.02, TRAVEL_V);
@@ -192,6 +169,7 @@ function estimateDrawTiming(plan, pathLengthM) {
   };
 }
 
+//Shared preview/execute planner path for image input.
 async function preparePlanFromBody(body = {}) {
   const input = body || {};
   const imageDataUrl = input.imageDataUrl;
@@ -202,12 +180,8 @@ async function preparePlanFromBody(body = {}) {
     err.status = 400;
     throw err;
   }
-  if (input.svg || input.text || Array.isArray(input.strokes)) {
-    const err = new Error("SVG/text/strokes input is disabled. Use { imageDataUrl } only.");
-    err.status = 400;
-    throw err;
-  }
 
+  //Vectorize first, then clean and fit the strokes into the whiteboard frame.
   const vec = await vectorizeImageDataUrl(imageDataUrl, input.vectorize || {});
   const plan = planDrawingFromInput({
     strokes: vec.strokesNormalized,
@@ -226,6 +200,7 @@ async function preparePlanFromBody(body = {}) {
   return plan;
 }
 
+//Return a small pose sample so the UI can inspect planned points if needed.
 function makePreviewPoseSample(strokesNormalized, maxPoints = 24) {
   const out = [];
   for (const stroke of strokesNormalized) {

@@ -1,3 +1,4 @@
+//URScript transport layer. Supports one-shot sends or a warmed persistent socket.
 const net = require("net");
 const clients = new Map();
 const PERSISTENT_SOCKET = process.env.UR_PERSISTENT_SOCKET !== "0";
@@ -8,7 +9,7 @@ function toProgram(script) {
     throw new Error("Empty URScript");
   }
 
-  //if caller already passed a full URScript program, send as is.
+  //If the caller already passed a full URScript program, send it as-is.
   if (/^\s*def\s+\w+\s*\(/.test(text)) {
     return text.endsWith("\n") ? text : `${text}\n`;
   }
@@ -165,12 +166,13 @@ function sendPersistent(host, port, payload, rawScript, timeoutMs) {
     }
     return { ok: true, sent: payload.trim(), raw: rawScript };
   };
+  //Serialize writes per socket so overlapping commands do not corrupt each other.
   const run = client.queue.then(task, task);
   client.queue = run.catch(() => {});
   return run;
 }
 
-//send a URScript string to URSim.
+//Main entry for sending a URScript snippet to URSim or the physical controller.
 function sendURScript(host, port, script, timeoutMs = 2000) {
   let payload;
   try {

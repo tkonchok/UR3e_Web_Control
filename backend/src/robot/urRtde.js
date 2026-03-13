@@ -1,3 +1,4 @@
+//minimal RTDE client for live motion status. Used for UI moving/idle feedback.
 const net = require("net");
 
 const CMD_REQUEST_PROTOCOL_VERSION = "V".charCodeAt(0); // 86
@@ -245,6 +246,7 @@ class URRtdeMonitor {
   }
 
   _onData(chunk) {
+    // RTDE is packet-based, so buffer until a full frame arrives.
     this.rx = Buffer.concat([this.rx, chunk]);
     while (this.rx.length >= 3) {
       const size = this.rx.readUInt16BE(0);

@@ -1,3 +1,4 @@
+// Board calibration and square lookup for chess and tic-tac-toe modes.
 const deg = (d) => (d * Math.PI) / 180;
 
 const SQUARES = {
@@ -97,6 +98,7 @@ function clampZ(z) {
   return Math.max(z, MIN_Z);
 }
 
+//Basic 3D vector helpers used to build the board frame.
 function vec(a, b) { return { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z }; }
 function dot(u, v) { return u.x * v.x + u.y * v.y + u.z * v.z; }
 function len(u) { return Math.sqrt(dot(u, u)); }
@@ -119,6 +121,7 @@ function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
 }
 
+//Interpolate orientation drift from the anchor poses.
 function orientationAt(board, file, rank) {
   const o0 = board.orientationOrigin || board.origin || { rx: 0, ry: 0, rz: 0 };
   const df = board.fileRotDelta || { rx: 0, ry: 0, rz: 0 };
@@ -130,6 +133,7 @@ function orientationAt(board, file, rank) {
   };
 }
 
+//Build a board frame from the active anchor set.
 function buildBoard(profileName = activeBoardProfile) {
   const profile = BOARD_PROFILES[profileName];
   if (!profile) return null;
@@ -138,7 +142,7 @@ function buildBoard(profileName = activeBoardProfile) {
   let fileDir = vec(A1, B1);
   let rankDir = vec(A1, A2);
 
-  // For table setups, ignore anchor Z noise so every square stays at one height.
+  //For table setups, ignore small anchor Z noise so every square stays at one height.
   if (profile.flattenZ) {
     fileDir = { x: fileDir.x, y: fileDir.y, z: 0 };
     rankDir = { x: rankDir.x, y: rankDir.y, z: 0 };
@@ -174,7 +178,7 @@ function buildBoard(profileName = activeBoardProfile) {
   const rankGain = Number(profile.rankRotGain ?? 1);
   const maxStep = Number(profile.maxRotStepRad ?? 0.03);
 
-  // Rotation-vector component drift per one square (with configurable gains/clamp).
+  //Estimate small orientation drift per square from the anchor poses.
   const rawFileDelta = {
     rx: (B1.rx - A1.rx) / fileSpan,
     ry: (B1.ry - A1.ry) / fileSpan,
@@ -216,6 +220,7 @@ function buildBoard(profileName = activeBoardProfile) {
 
 const CHESS_BOARD = buildBoard();
 
+//Swap to a new board profile without replacing the shared object reference.
 function setBoardProfile(name) {
   if (!BOARD_PROFILES[name]) return null;
   activeBoardProfile = name;
@@ -233,6 +238,7 @@ function getBoardProfiles() {
   return Object.entries(BOARD_PROFILES).map(([id, p]) => ({ id, label: p.label }));
 }
 
+//Parse a chess square like A1 into zero-based file/rank indices.
 function parseChessSquare(id) {
   if (!/^[A-H][1-8]$/i.test(id)) return null;
 
@@ -242,6 +248,7 @@ function parseChessSquare(id) {
   return { file, rank };
 }
 
+//Convert a chess square into a robot pose using the current calibration.
 function chessSquareToPose(id) {
   const p = parseChessSquare(id);
   if (!p) return null;
@@ -270,6 +277,7 @@ function parseTicTacToeSquare(id) {
   return { row: Math.floor(n / 3), col: n % 3 };
 }
 
+//Map tic-tac-toe cells 1-9 onto the calibrated board frame.
 function ticTacToeSquareToPose(id) {
   const p = parseTicTacToeSquare(id);
   if (!p) return null;
