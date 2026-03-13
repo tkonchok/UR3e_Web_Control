@@ -1,3 +1,4 @@
+//lightweight shared state for UI status and the single controller lock.
 const crypto = require("crypto");
 
 let movingUntil = 0;
@@ -26,7 +27,7 @@ function isLockExpired() {
   return !lockToken || Date.now() - lockLastSeen > LOCK_TTL_MS;
 }
 
-//only one browser can control the robot at a time.
+//Only one browser can control the robot at a time.
 function acquireLock(requestedToken) {
   if (!isLockExpired() && lockToken && lockToken !== requestedToken) {
     return { ok: false, reason: "locked", token: null };

@@ -1,0 +1,95 @@
+UR3e Web Control
+Reviewer Setup Guide
+
+Purpose
+This repository contains a web-based control system for a Universal Robots UR3e arm.
+The current branch supports three modes:
+- Chess move / pick / place
+- Tic-Tac-Toe move / mark
+- Whiteboard image drawing from PNG/JPG input
+
+Recommended Review Environment
+- macOS or Linux
+- Node.js 18+
+- Python 3.10+
+- Docker Desktop
+
+1. Start URSim
+Run:
+
+docker run --rm -it \
+  --platform linux/amd64 \
+  -e ROBOT_MODEL=UR3e \
+  -p 5900:5900 \
+  -p 30001:30001 \
+  -p 30002:30002 \
+  -p 30004:30004 \
+  -p 6081:6080 \
+  -p 29999:29999 \
+  --name ur3e_container \
+  universalrobots/ursim_e-series
+
+Pendant:
+http://localhost:6081/vnc.html
+
+2. Install backend
+From the repo root:
+
+cd backend
+npm install
+python3 -m pip install -r requirements-draw.txt
+
+Optional:
+cp .env.example .env
+
+Start backend:
+
+npm start
+
+3. Install UI
+In a second terminal:
+
+cd UI
+npm install
+npm run dev
+
+4. Open UI
+Open the local Vite URL shown in terminal, usually:
+http://localhost:5173
+
+5. Suggested Review Path
+- Chess mode:
+  - Move to a square
+  - Pick and place with dry-run on/off
+- Tic-Tac-Toe mode:
+  - Move to a cell
+  - Mark X and O
+- Whiteboard mode:
+  - Upload a high-contrast PNG/JPG
+  - Preview vectorized strokes
+  - Execute draw in dry-run first
+  - Execute draw live in URSim
+
+6. Important Notes
+- The project is simulator-first; physical robot use still depends on calibration quality.
+- Whiteboard mode currently supports raster image input only. SVG/text direct draw is disabled.
+- Robot state in the UI is based primarily on RTDE telemetry, with dashboard fallback.
+- Drawing jobs are rejected if they exceed configured safety limits.
+
+7. Main Files
+- UI/src/App.tsx
+- backend/src/server.js
+- backend/src/routes/move.js
+- backend/src/routes/draw.js
+- backend/src/robot/squares.js
+- backend/src/robot/whiteboard.js
+- backend/src/robot/urTcp.js
+- backend/src/robot/urRtde.js
+- backend/src/draw/vectorizeImage.js
+- backend/src/draw/vectorize_opencv.py
+- backend/src/draw/planner.js
+
+8. Current Known Limitations
+- Physical calibration still requires manual refinement.
+- Drawing quality depends heavily on clean input images.
+- No automated test suite yet; validation is currently simulator-based and manual.
