@@ -319,7 +319,6 @@ Poor inputs:
 - tiny thin-line images with compression artifacts
 
 ## Notes
-- SVG/text direct draw input is currently disabled; image input is the supported path.
 - Preview first, then execute, especially for high-detail images.
 - Best results come from high-contrast images with simple backgrounds.
 - Calibration quality directly affects physical drawing and pick accuracy.
