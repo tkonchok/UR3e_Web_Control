@@ -4,7 +4,28 @@ dist/
 build/
 coverage/
 __pycache__/
+tmp/
 *.pyc
 *.log
 .env
 .env.local
+
+# Report image curation: ignore screenshot drafts by default and allow only
+# figures used in the final report or source screenshots used to build them.
+docs/screenshots/**
+!docs/screenshots/
+!docs/screenshots/Module_System.png
+!docs/screenshots/Whiteboard_Execution_Validation.png
+!docs/screenshots/Whiteboard_Sample3_Tuning.png
+!docs/screenshots/Whiteboard_Validation_Examples.png
+
+# Final report figures stored in the new_figures subfolder.
+!docs/screenshots/new_figures/
+!docs/screenshots/new_figures/MultiUI.png
+!docs/screenshots/new_figures/System_Pipeline.png
+!docs/screenshots/new_figures/Deployment_Diagram.png
+!docs/screenshots/new_figures/Whiteboard.png
+!docs/screenshots/new_figures/Calibration_Anchor_Points.png
+!docs/screenshots/new_figures/Chess_Pick_Place_Validation.png
+!docs/screenshots/new_figures/TicTacToe_Validation.png
+!docs/screenshots/new_figures/limitation.png
